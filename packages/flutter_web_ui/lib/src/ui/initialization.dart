@@ -1,4 +1,4 @@
-// Copyright 2019 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,9 +12,6 @@ Future<void> webOnlyInitializePlatform({
     engine.window.webOnlyLocationStrategy = const engine.HashLocationStrategy();
   }
 
-  assetManager ??= const engine.AssetManager();
-  await webOnlySetAssetManager(assetManager);
-  await _fontCollection.ensureFontsLoaded();
   engine.webOnlyInitializeEngine();
 
   // This needs to be after `webOnlyInitializeEngine` because that is where the
@@ -22,6 +19,14 @@ Future<void> webOnlyInitializePlatform({
   if (engine.experimentalUseSkia) {
     await engine.initializeSkia();
   }
+
+  assetManager ??= const engine.AssetManager();
+  await webOnlySetAssetManager(assetManager);
+  await _fontCollection.ensureFontsLoaded();
+  if (engine.experimentalUseSkia) {
+    await engine.skiaFontCollection.ensureFontsLoaded();
+  }
+
   _webOnlyIsInitialized = true;
 }
 
@@ -43,10 +48,19 @@ Future<void> webOnlySetAssetManager(engine.AssetManager assetManager) async {
 
   _assetManager = assetManager;
 
+  if (engine.experimentalUseSkia) {
+    engine.skiaFontCollection ??= engine.SkiaFontCollection();
+  }
+
   _fontCollection ??= engine.FontCollection();
+
   _fontCollection.clear();
   if (_assetManager != null) {
     await _fontCollection.registerFonts(_assetManager);
+
+    if (engine.experimentalUseSkia) {
+      await engine.skiaFontCollection.registerFonts(_assetManager);
+    }
   }
 
   if (debugEmulateFlutterTesterEnvironment) {

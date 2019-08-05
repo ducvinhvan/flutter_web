@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -154,7 +154,7 @@ class RecordingCanvas {
     _commands.add(PaintClipRRect(rrect));
   }
 
-  void clipPath(ui.Path path) {
+  void clipPath(ui.Path path, {bool doAntiAlias = true}) {
     _paintBounds.clipRect(path.getBounds());
     _hasArbitraryPaint = true;
     _commands.add(PaintClipPath(path));
@@ -267,7 +267,10 @@ class RecordingCanvas {
       pathBounds = pathBounds.inflate(paint.strokeWidth);
     }
     _paintBounds.grow(pathBounds);
-    _commands.add(PaintDrawPath(path, paint.webOnlyPaintData));
+    // Clone path so it can be reused for subsequent draw calls.
+    final ui.Path clone = ui.Path.from(path);
+    clone.fillType = path.fillType;
+    _commands.add(PaintDrawPath(clone, paint.webOnlyPaintData));
   }
 
   void drawImage(ui.Image image, ui.Offset offset, ui.Paint paint) {
@@ -287,20 +290,21 @@ class RecordingCanvas {
   }
 
   void drawParagraph(ui.Paragraph paragraph, ui.Offset offset) {
-    if (!paragraph.webOnlyIsLaidOut) {
+    final EngineParagraph engineParagraph = paragraph;
+    if (!engineParagraph._isLaidOut) {
       // Ignore non-laid out paragraphs. This matches Flutter's behavior.
       return;
     }
 
     _didDraw = true;
-    if (paragraph.webOnlyGetParagraphGeometricStyle().ellipsis != null) {
+    if (engineParagraph._geometricStyle.ellipsis != null) {
       _hasArbitraryPaint = true;
     }
     final double left = offset.dx;
     final double top = offset.dy;
     _paintBounds.growLTRB(
-        left, top, left + paragraph.width, top + paragraph.height);
-    _commands.add(PaintDrawParagraph(paragraph, offset));
+        left, top, left + engineParagraph.width, top + engineParagraph.height);
+    _commands.add(PaintDrawParagraph(engineParagraph, offset));
   }
 
   void drawShadow(ui.Path path, ui.Color color, double elevation,
@@ -953,7 +957,7 @@ class PaintDrawImageRect extends PaintCommand {
 }
 
 class PaintDrawParagraph extends PaintCommand {
-  final ui.Paragraph paragraph;
+  final EngineParagraph paragraph;
   final ui.Offset offset;
 
   PaintDrawParagraph(this.paragraph, this.offset);
@@ -966,7 +970,7 @@ class PaintDrawParagraph extends PaintCommand {
   @override
   String toString() {
     if (assertionsEnabled) {
-      return 'DrawParagraph(${paragraph.webOnlyGetPlainText()}, $offset)';
+      return 'DrawParagraph(${paragraph._plainText}, $offset)';
     } else {
       return super.toString();
     }

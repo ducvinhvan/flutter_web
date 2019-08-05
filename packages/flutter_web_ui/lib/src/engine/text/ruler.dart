@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -73,7 +73,7 @@ class ParagraphGeometricStyle {
 
     // Font weight.
     if (fontWeight != null) {
-      result.write(ui.webOnlyFontWeightToCss(fontWeight));
+      result.write(fontWeightToCss(fontWeight));
     } else {
       result.write(DomRenderer.defaultFontWeight);
     }
@@ -166,10 +166,10 @@ class TextDimensions {
   ///
   /// The primary efficiency gain is from rare occurrence of rich text in
   /// typical apps.
-  void updateText(ui.Paragraph from, ParagraphGeometricStyle style) {
+  void updateText(EngineParagraph from, ParagraphGeometricStyle style) {
     assert(from != null);
     assert(_element != null);
-    assert(from.webOnlyDebugHasSameRootStyle(style));
+    assert(from._debugHasSameRootStyle(style));
     assert(() {
       final bool wasEmptyOrPlainText = _element.childNodes.isEmpty ||
           (_element.childNodes.length == 1 &&
@@ -185,7 +185,7 @@ class TextDimensions {
     }());
 
     _invalidateBoundsCache();
-    final String plainText = from.webOnlyGetPlainText();
+    final String plainText = from._plainText;
     if (plainText != null) {
       // Plain text: just set the string. The paragraph's style is assumed to
       // match the style set on the `element`. Setting text as plain string is
@@ -195,7 +195,7 @@ class TextDimensions {
     } else {
       // Rich text: deeply copy contents. This is the slow case that should be
       // avoided if fast layout performance is desired.
-      final html.Element copy = from.webOnlyGetParagraphElement().clone(true);
+      final html.Element copy = from._paragraphElement.clone(true);
       _element.children.addAll(copy.children);
     }
   }
@@ -221,9 +221,8 @@ class TextDimensions {
     _element.style
       ..fontSize = style.fontSize != null ? '${style.fontSize.floor()}px' : null
       ..fontFamily = style.effectiveFontFamily
-      ..fontWeight = style.fontWeight != null
-          ? ui.webOnlyFontWeightToCss(style.fontWeight)
-          : null
+      ..fontWeight =
+          style.fontWeight != null ? fontWeightToCss(style.fontWeight) : null
       ..fontStyle = style.fontStyle != null
           ? style.fontStyle == ui.FontStyle.normal ? 'normal' : 'italic'
           : null
@@ -498,12 +497,12 @@ class ParagraphRuler {
   }
 
   /// The paragraph being measured.
-  ui.Paragraph _paragraph;
+  EngineParagraph _paragraph;
 
   /// Prepares this ruler for measuring the given [paragraph].
   ///
   /// This method must be called before calling any of the `measure*` methods.
-  void willMeasure(ui.Paragraph paragraph) {
+  void willMeasure(EngineParagraph paragraph) {
     assert(paragraph != null);
     assert(() {
       if (_paragraph != null) {
@@ -513,7 +512,7 @@ class ParagraphRuler {
       }
       return true;
     }());
-    assert(paragraph.webOnlyDebugHasSameRootStyle(style));
+    assert(paragraph._debugHasSameRootStyle(style));
     _paragraph = paragraph;
   }
 
@@ -539,7 +538,7 @@ class ParagraphRuler {
     // which doesn't work. So we need to replace it with a whitespace. The
     // correct fix would be to do line height and baseline measurements and
     // cache them separately.
-    if (_paragraph.webOnlyGetPlainText() == '') {
+    if (_paragraph._plainText == '') {
       singleLineDimensions.updateTextToSpace();
     } else {
       singleLineDimensions.updateText(_paragraph, style);
@@ -572,6 +571,53 @@ class ParagraphRuler {
     constrainedDimensions.updateWidth('${constraints.width + 0.5}px');
   }
 
+  /// Returns text position in a paragraph that contains multiple
+  /// nested spans given an offset.
+  int hitTest(ui.ParagraphConstraints constraints, ui.Offset offset) {
+    measureWithConstraints(constraints);
+    // Get paragraph element root used to measure constrainedDimensions.
+    final html.HtmlElement el = constrainedDimensions._element;
+    final List<html.Node> textNodes = <html.Node>[];
+    // Collect all text nodes (breadth first traversal).
+    // Since there is no api to get bounds of text nodes directly we work
+    // upwards and measure span elements and finally the paragraph.
+    _collectTextNodes(el.childNodes, textNodes);
+    // Hit test spans starting from leaf nodes up (backwards).
+    for (int i = textNodes.length - 1; i >= 0; i--) {
+      final html.Node node = textNodes[i];
+      // Check if offset is within client rect bounds of text node's
+      // parent element.
+      final html.Element parent = node.parentNode;
+      final html.Rectangle<num> bounds = parent.getBoundingClientRect();
+      final double dx = offset.dx;
+      final double dy = offset.dy;
+      if (dx >= bounds.left &&
+          dy < bounds.right &&
+          dy >= bounds.top &&
+          dy < bounds.bottom) {
+        // We found the element bounds that contains offset.
+        // Calculate text position for this node.
+        int textPosition = 0;
+        for (int nodeIndex = 0; nodeIndex < i; nodeIndex++) {
+          textPosition += textNodes[nodeIndex].text.length;
+        }
+        return textPosition;
+      }
+    }
+    return 0;
+  }
+
+  void _collectTextNodes(Iterable<html.Node> nodes, List<html.Node> textNodes) {
+    for (html.Node node in nodes) {
+      if (node.nodeType == html.Node.TEXT_NODE) {
+        textNodes.add(node);
+      }
+      if (node.hasChildNodes()) {
+        _collectTextNodes(node.childNodes, textNodes);
+      }
+    }
+  }
+
   /// Performs clean-up after a measurement is done, preparing this ruler for
   /// a future reuse.
   ///
@@ -590,7 +636,7 @@ class ParagraphRuler {
     //
     // We do not do this for plain text, because replacing plain text is more
     // expensive than paying the cost of the DOM mutation to clean it.
-    if (_paragraph.webOnlyGetPlainText() == null) {
+    if (_paragraph._plainText == null) {
       domRenderer
         ..clearDom(singleLineDimensions._element)
         ..clearDom(minIntrinsicDimensions._element)
@@ -684,8 +730,8 @@ class ParagraphRuler {
   // is changing.
   static const int _constraintCacheSize = 8;
 
-  void cacheMeasurement(ui.Paragraph paragraph, MeasurementResult item) {
-    final String plainText = paragraph.webOnlyGetPlainText();
+  void cacheMeasurement(EngineParagraph paragraph, MeasurementResult item) {
+    final String plainText = paragraph._plainText;
     final List<MeasurementResult> constraintCache =
         _measurementCache[plainText] ??= <MeasurementResult>[];
     constraintCache.add(item);
@@ -703,9 +749,9 @@ class ParagraphRuler {
   }
 
   MeasurementResult cacheLookup(
-      ui.Paragraph paragraph, ui.ParagraphConstraints constraints) {
+      EngineParagraph paragraph, ui.ParagraphConstraints constraints) {
     final List<MeasurementResult> constraintCache =
-        _measurementCache[paragraph.webOnlyGetPlainText()];
+        _measurementCache[paragraph._plainText];
     if (constraintCache == null) {
       return null;
     }
@@ -764,7 +810,7 @@ class MeasurementResult {
   /// satisfy [constraintWidth],
   final List<String> lines;
 
-  MeasurementResult(
+  const MeasurementResult(
     this.constraintWidth, {
     @required this.isSingleLine,
     @required this.width,

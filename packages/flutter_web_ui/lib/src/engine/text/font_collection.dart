@@ -1,7 +1,11 @@
+// Copyright 2013 The Flutter Authors. All rights reserved.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
+
 part of engine;
 
 const String _testFontFamily = 'Ahem';
-const String _testFontUrl = 'packages/flutter_web/assets/Ahem.ttf';
+const String _testFontUrl = 'packages/flutter_web_ui/assets/Ahem.ttf';
 const String _robotoFontUrl =
     'packages/flutter_web_ui/assets/Roboto-Regular.ttf';
 

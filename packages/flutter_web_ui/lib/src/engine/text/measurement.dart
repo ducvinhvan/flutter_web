@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -188,31 +188,29 @@ abstract class TextMeasurementService {
     rulerManager = null;
   }
 
-  static bool _canUseCanvasMeasurement(ui.Paragraph paragraph) {
+  static bool _canUseCanvasMeasurement(EngineParagraph paragraph) {
     // Currently, the canvas-based approach only works on plain text that
     // doesn't have any of the following styles:
     // - decoration
     // - word spacing
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
-    return paragraph.webOnlyGetPlainText() != null &&
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
+    return paragraph._plainText != null &&
         style.decoration == null &&
         style.wordSpacing == null;
   }
 
   /// Measures the paragraph and returns a [MeasurementResult] object.
   MeasurementResult measure(
-    ui.Paragraph paragraph,
+    EngineParagraph paragraph,
     ui.ParagraphConstraints constraints,
   ) {
     assert(rulerManager != null);
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
     final ParagraphRuler ruler =
         TextMeasurementService.rulerManager.findOrCreateRuler(style);
 
     if (assertionsEnabled) {
-      if (paragraph.webOnlyGetPlainText() == null) {
+      if (paragraph._plainText == null) {
         domRenderer.debugRichTextLayout();
       } else {
         domRenderer.debugPlainTextLayout();
@@ -231,25 +229,28 @@ abstract class TextMeasurementService {
 
   /// Measures the width of a substring of the given [paragraph] with no
   /// constraints.
-  double measureSubstringWidth(ui.Paragraph paragraph, int start, int end);
+  double measureSubstringWidth(EngineParagraph paragraph, int start, int end);
+
+  /// Returns text position given a paragraph, constraints and offset.
+  ui.TextPosition getTextPositionForOffset(EngineParagraph paragraph,
+      ui.ParagraphConstraints constraints, ui.Offset offset);
 
   /// Delegates to a [ParagraphRuler] to measure a list of text boxes that
   /// enclose the given range of text.
   List<ui.TextBox> measureBoxesForRange(
-    ui.Paragraph paragraph,
+    EngineParagraph paragraph,
     ui.ParagraphConstraints constraints, {
     int start,
     int end,
     double alignOffset,
     ui.TextDirection textDirection,
   }) {
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
     final ParagraphRuler ruler =
         TextMeasurementService.rulerManager.findOrCreateRuler(style);
 
     return ruler.measureBoxesForRange(
-      paragraph.webOnlyGetPlainText(),
+      paragraph._plainText,
       constraints,
       start: start,
       end: end,
@@ -275,7 +276,7 @@ abstract class TextMeasurementService {
   /// paragraph. When that's available, it can be used by a canvas to render
   /// the text line.
   MeasurementResult _doMeasure(
-    ui.Paragraph paragraph,
+    EngineParagraph paragraph,
     ui.ParagraphConstraints constraints,
     ParagraphRuler ruler,
   );
@@ -295,12 +296,12 @@ class DomTextMeasurementService extends TextMeasurementService {
 
   @override
   MeasurementResult _doMeasure(
-    ui.Paragraph paragraph,
+    EngineParagraph paragraph,
     ui.ParagraphConstraints constraints,
     ParagraphRuler ruler,
   ) {
     ruler.willMeasure(paragraph);
-    final String plainText = paragraph.webOnlyGetPlainText();
+    final String plainText = paragraph._plainText;
 
     ruler.measureAll(constraints);
 
@@ -320,21 +321,34 @@ class DomTextMeasurementService extends TextMeasurementService {
   }
 
   @override
-  double measureSubstringWidth(ui.Paragraph paragraph, int start, int end) {
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
+  double measureSubstringWidth(EngineParagraph paragraph, int start, int end) {
+    assert(paragraph._plainText != null);
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
     final ParagraphRuler ruler =
         TextMeasurementService.rulerManager.findOrCreateRuler(style);
 
-    final String text = paragraph.webOnlyGetPlainText().substring(start, end);
-    final ui.Paragraph substringParagraph =
-        paragraph.webOnlyCloneWithText(text);
+    final String text = paragraph._plainText.substring(start, end);
+    final ui.Paragraph substringParagraph = paragraph._cloneWithText(text);
 
     ruler.willMeasure(substringParagraph);
     ruler.measureAsSingleLine();
     final TextDimensions dimensions = ruler.singleLineDimensions;
     ruler.didMeasure();
     return dimensions.width;
+  }
+
+  @override
+  ui.TextPosition getTextPositionForOffset(EngineParagraph paragraph,
+      ui.ParagraphConstraints constraints, ui.Offset offset) {
+    assert(paragraph._plainText == null, 'should only be called for multispan');
+
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
+    final ParagraphRuler ruler =
+        TextMeasurementService.rulerManager.findOrCreateRuler(style);
+    ruler.willMeasure(paragraph);
+    final int position = ruler.hitTest(constraints, offset);
+    ruler.didMeasure();
+    return ui.TextPosition(offset: position);
   }
 
   /// Called when we have determined that the paragraph fits the [constraints]
@@ -385,7 +399,7 @@ class DomTextMeasurementService extends TextMeasurementService {
   /// and get new values for width, height and alphabetic baseline. We also need
   /// to measure `minIntrinsicWidth`.
   MeasurementResult _measureMultiLineParagraph(ParagraphRuler ruler,
-      ui.Paragraph paragraph, ui.ParagraphConstraints constraints) {
+      EngineParagraph paragraph, ui.ParagraphConstraints constraints) {
     // If constraint is infinite, we must use _measureSingleLineParagraph
     final double width = constraints.width;
     final double minIntrinsicWidth = ruler.minIntrinsicDimensions.width;
@@ -396,7 +410,7 @@ class DomTextMeasurementService extends TextMeasurementService {
 
     double height;
     double lineHeight;
-    final int maxLines = paragraph.webOnlyGetParagraphGeometricStyle().maxLines;
+    final int maxLines = paragraph._geometricStyle.maxLines;
     if (maxLines == null) {
       height = naturalHeight;
     } else {
@@ -465,13 +479,12 @@ class CanvasTextMeasurementService extends TextMeasurementService {
 
   @override
   MeasurementResult _doMeasure(
-    ui.Paragraph paragraph,
+    EngineParagraph paragraph,
     ui.ParagraphConstraints constraints,
     ParagraphRuler ruler,
   ) {
-    final String text = paragraph.webOnlyGetPlainText();
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
+    final String text = paragraph._plainText;
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
     assert(text != null);
 
     // TODO(mdebbar): Check if the whole text can fit in a single-line. Then avoid all this ceremony.
@@ -533,18 +546,25 @@ class CanvasTextMeasurementService extends TextMeasurementService {
   }
 
   @override
-  double measureSubstringWidth(ui.Paragraph paragraph, int start, int end) {
-    final String text = paragraph.webOnlyGetPlainText();
-    final ParagraphGeometricStyle style =
-        paragraph.webOnlyGetParagraphGeometricStyle();
+  double measureSubstringWidth(EngineParagraph paragraph, int start, int end) {
+    assert(paragraph._plainText != null);
+    final String text = paragraph._plainText;
+    final ParagraphGeometricStyle style = paragraph._geometricStyle;
     _canvasContext.font = style.cssFontString;
     return _measureSubstring(
       _canvasContext,
-      paragraph.webOnlyGetParagraphGeometricStyle(),
+      paragraph._geometricStyle,
       text,
       start,
       end,
     );
+  }
+
+  @override
+  ui.TextPosition getTextPositionForOffset(EngineParagraph paragraph,
+      ui.ParagraphConstraints constraints, ui.Offset offset) {
+    // TODO(flutter_web): implement.
+    return new ui.TextPosition(offset: 0);
   }
 }
 

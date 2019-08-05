@@ -1,10 +1,11 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 library engine;
 
 import 'dart:async';
+import 'dart:collection' show ListBase;
 import 'dart:convert' hide Codec;
 import 'dart:developer' as developer;
 import 'dart:html' as html;
@@ -14,7 +15,6 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:meta/meta.dart';
-import 'package:typed_data/typed_buffers.dart' show Uint8Buffer;
 
 import '../ui.dart' as ui;
 
@@ -25,11 +25,11 @@ part 'engine/browser_detection.dart';
 part 'engine/browser_location.dart';
 part 'engine/compositor/canvas.dart';
 part 'engine/compositor/engine_delegate.dart';
+part 'engine/compositor/fonts.dart';
 part 'engine/compositor/initialization.dart';
 part 'engine/compositor/layer.dart';
 part 'engine/compositor/layer_scene_builder.dart';
 part 'engine/compositor/layer_tree.dart';
-part 'engine/compositor/matrix.dart';
 part 'engine/compositor/path.dart';
 part 'engine/compositor/picture.dart';
 part 'engine/compositor/picture_recorder.dart';
@@ -39,6 +39,7 @@ part 'engine/compositor/rasterizer.dart';
 part 'engine/compositor/recording_canvas.dart';
 part 'engine/compositor/runtime_delegate.dart';
 part 'engine/compositor/surface.dart';
+part 'engine/compositor/util.dart';
 part 'engine/compositor/viewport_metrics.dart';
 part 'engine/conic.dart';
 part 'engine/dom_canvas.dart';
@@ -63,6 +64,7 @@ part 'engine/semantics/scrollable.dart';
 part 'engine/semantics/semantics.dart';
 part 'engine/semantics/tappable.dart';
 part 'engine/semantics/text_field.dart';
+part 'engine/services/buffers.dart';
 part 'engine/services/message_codec.dart';
 part 'engine/services/message_codecs.dart';
 part 'engine/services/serialization.dart';
@@ -81,6 +83,7 @@ part 'engine/test_embedding.dart';
 part 'engine/text/font_collection.dart';
 part 'engine/text/line_breaker.dart';
 part 'engine/text/measurement.dart';
+part 'engine/text/paragraph.dart';
 part 'engine/text/ruler.dart';
 part 'engine/text/unicode_range.dart';
 part 'engine/text/word_break_properties.dart';

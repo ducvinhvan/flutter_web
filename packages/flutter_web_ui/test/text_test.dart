@@ -2,14 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-import 'package:flutter_web_ui/ui.dart';
-import 'package:flutter_web_test/flutter_web_test.dart';
+import 'package:test/test.dart';
 
-void main() {
+import 'package:flutter_web_ui/ui.dart';
+import 'package:flutter_web_ui/src/engine.dart';
+
+import 'matchers.dart';
+
+void main() async {
   const double baselineRatio = 1.1662499904632568;
 
-  testWidgets('predictably lays out a single-line paragraph',
-      (WidgetTester tester) async {
+  await webOnlyInitializeTestDomRenderer();
+
+  test('predictably lays out a single-line paragraph', () {
     for (double fontSize in <double>[10.0, 20.0, 30.0, 40.0]) {
       final ParagraphBuilder builder = ParagraphBuilder(ParagraphStyle(
         fontFamily: 'Ahem',
@@ -28,14 +33,14 @@ void main() {
       expect(paragraph.alphabeticBaseline, fontSize * .8);
       expect(
         paragraph.ideographicBaseline,
-        moreOrLessEquals(paragraph.alphabeticBaseline * baselineRatio,
-            epsilon: 0.001),
+        within(
+            distance: 0.001,
+            from: paragraph.alphabeticBaseline * baselineRatio),
       );
     }
   });
 
-  testWidgets('predictably lays out a multi-line paragraph',
-      (WidgetTester tester) async {
+  test('predictably lays out a multi-line paragraph', () {
     for (double fontSize in <double>[10.0, 20.0, 30.0, 40.0]) {
       final ParagraphBuilder builder = ParagraphBuilder(ParagraphStyle(
         fontFamily: 'Ahem',
@@ -58,8 +63,9 @@ void main() {
       expect(paragraph.alphabeticBaseline, fontSize * .8);
       expect(
         paragraph.ideographicBaseline,
-        moreOrLessEquals(paragraph.alphabeticBaseline * baselineRatio,
-            epsilon: 0.001),
+        within(
+            distance: 0.001,
+            from: paragraph.alphabeticBaseline * baselineRatio),
       );
     }
   });
@@ -72,9 +78,9 @@ void main() {
       fontSize: 14.0,
     ));
     builder.addText('How do you do this fine morning?');
-    final Paragraph paragraph = builder.build();
+    final EngineParagraph paragraph = builder.build();
 
-    expect(paragraph.webOnlyGetParagraphElement().parent, isNull);
+    expect(paragraph.paragraphElement.parent, isNull);
     expect(paragraph.height, 0.0);
     expect(paragraph.width, -1.0);
     expect(paragraph.minIntrinsicWidth, 0.0);
@@ -84,7 +90,7 @@ void main() {
 
     paragraph.layout(const ParagraphConstraints(width: 60.0));
 
-    expect(paragraph.webOnlyGetParagraphElement().parent, isNull);
+    expect(paragraph.paragraphElement.parent, isNull);
     expect(paragraph.height, greaterThan(0.0));
     expect(paragraph.width, greaterThan(0.0));
     expect(paragraph.minIntrinsicWidth, greaterThan(0.0));
@@ -138,10 +144,9 @@ void main() {
       fontSize: 15.0,
     ));
     builder.addText('hi');
-    Paragraph paragraph = builder.build();
-    expect(paragraph.webOnlyGetPlainText(), isNotNull);
-    expect(paragraph.webOnlyGetParagraphGeometricStyle().fontWeight,
-        FontWeight.normal);
+    EngineParagraph paragraph = builder.build();
+    expect(paragraph.plainText, isNotNull);
+    expect(paragraph.geometricStyle.fontWeight, FontWeight.normal);
 
     builder = ParagraphBuilder(ParagraphStyle(
       fontFamily: 'sans-serif',
@@ -152,9 +157,8 @@ void main() {
     builder.pushStyle(TextStyle(fontWeight: FontWeight.bold));
     builder.addText('hi');
     paragraph = builder.build();
-    expect(paragraph.webOnlyGetPlainText(), isNotNull);
-    expect(paragraph.webOnlyGetParagraphGeometricStyle().fontWeight,
-        FontWeight.bold);
+    expect(paragraph.plainText, isNotNull);
+    expect(paragraph.geometricStyle.fontWeight, FontWeight.bold);
   });
 
   test('$ParagraphBuilder detects rich text', () {
@@ -167,10 +171,9 @@ void main() {
     builder.addText('h');
     builder.pushStyle(TextStyle(fontWeight: FontWeight.bold));
     builder.addText('i');
-    final Paragraph paragraph = builder.build();
-    expect(paragraph.webOnlyGetPlainText(), isNull);
-    expect(paragraph.webOnlyGetParagraphGeometricStyle().fontWeight,
-        FontWeight.normal);
+    final EngineParagraph paragraph = builder.build();
+    expect(paragraph.plainText, isNull);
+    expect(paragraph.geometricStyle.fontWeight, FontWeight.normal);
   });
 
   test('$ParagraphBuilder treats empty text as plain', () {
@@ -181,9 +184,36 @@ void main() {
       fontSize: 15.0,
     ));
     builder.pushStyle(TextStyle(fontWeight: FontWeight.bold));
-    final Paragraph paragraph = builder.build();
-    expect(paragraph.webOnlyGetPlainText(), '');
-    expect(paragraph.webOnlyGetParagraphGeometricStyle().fontWeight,
-        FontWeight.bold);
+    final EngineParagraph paragraph = builder.build();
+    expect(paragraph.plainText, '');
+    expect(paragraph.geometricStyle.fontWeight, FontWeight.bold);
+  });
+
+  // Regression test for https://github.com/flutter/flutter/issues/34931.
+  test('hit test on styled text returns correct span offset', () {
+    final ParagraphBuilder builder = ParagraphBuilder(ParagraphStyle(
+      fontFamily: 'sans-serif',
+      fontStyle: FontStyle.normal,
+      fontWeight: FontWeight.normal,
+      fontSize: 15.0,
+    ));
+    builder.pushStyle(TextStyle(fontWeight: FontWeight.bold));
+    const String firstSpanText = 'XYZ';
+    builder.addText(firstSpanText);
+    builder.pushStyle(TextStyle(fontWeight: FontWeight.normal));
+    const String secondSpanText = '1234';
+    builder.addText(secondSpanText);
+    builder.pushStyle(TextStyle(fontStyle: FontStyle.italic));
+    builder.addText('followed by a link');
+    final EngineParagraph paragraph = builder.build();
+    paragraph.layout(const ParagraphConstraints(width: 800.0));
+    expect(paragraph.plainText, isNull);
+    const int secondSpanStartPosition = firstSpanText.length;
+    const int thirdSpanStartPosition =
+        firstSpanText.length + secondSpanText.length;
+    expect(paragraph.getPositionForOffset(const Offset(50, 0)).offset,
+        secondSpanStartPosition);
+    expect(paragraph.getPositionForOffset(const Offset(150, 0)).offset,
+        thirdSpanStartPosition);
   });
 }

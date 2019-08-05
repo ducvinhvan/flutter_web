@@ -1,4 +1,4 @@
-// Copyright 2018 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Flutter Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,8 +12,6 @@ import 'dart:collection';
 import 'dart:html' as html;
 import 'dart:math' as math;
 import 'dart:typed_data';
-
-import 'package:meta/meta.dart';
 
 import 'src/engine.dart' as engine;
 export 'src/engine.dart'
